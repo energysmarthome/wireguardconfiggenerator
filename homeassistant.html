@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WireGuard Config Converter</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      padding: 0;
+    }
+    textarea {
+      width: 100%;
+      height: 150px;
+      margin-bottom: 20px;
+    }
+    pre {
+      background-color: #f4f4f4;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    button {
+      padding: 10px 20px;
+      background-color: #007BFF;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <h1>WireGuard Config Converter</h1>
+  <textarea id="inputConfig">
+#példa
+[Interface]
+PrivateKey = 4GWENH8/qeMMaPYUL3/SYd+Ws=
+Address = 10.28.0.11/24
+DNS = 1.1.1.1,8.8.8.8
+
+[Peer]
+PublicKey = uBV5geiJ0M28XpfwbA7HXyBjHJeOz8=
+PresharedKey = U7oWTiFoQFU+PBHop8OicU2DN44IBec8=
+Endpoint = b2b.energysmarthome.cloud:50001
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+  </textarea>
+  <button onclick="convertConfig()">Konvertálás</button>
+  <h2>Eredmény</h2>
+  <pre id="outputConfig"></pre>
+
+  <script>
+    function convertConfig() {
+      const input = document.getElementById("inputConfig").value;
+
+      const parseConfig = (config) => {
+        const lines = config.split("\n").filter(line => line.trim() !== "");
+        const sections = {};
+        let currentSection = null;
+
+        lines.forEach(line => {
+          if (line.startsWith("[")) {
+            currentSection = line.replace("[", "").replace("]", "").trim();
+            sections[currentSection] = {};
+          } else if (currentSection) {
+            const [key, ...value] = line.split("=");
+            sections[currentSection][key.trim()] = value.join("=").trim();
+          }
+        });
+        return sections;
+      };
+
+      const config = parseConfig(input);
+
+      if (!config.Interface || !config.Peer) {
+        document.getElementById("outputConfig").textContent = "Hiba: Nem megfelelő konfiguráció!";
+        return;
+      }
+
+      const interfaceSection = config.Interface;
+      const peerSection = config.Peer;
+
+      const formattedConfig = `
+interface:
+  private_key: ${interfaceSection.PrivateKey}
+  address: ${interfaceSection.Address.split("/")[0]}
+  dns:
+    - 1.1.1.1
+    - 8.8.8.8
+  post_up: >-
+    iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE; iptables -A FORWARD -p
+    tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+  post_down: >-
+    iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE; iptables -D FORWARD -p
+    tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+  mtu: 1420
+
+peers:
+  - public_key: ${peerSection.PublicKey}
+    pre_shared_key: ${peerSection.PresharedKey}
+    endpoint: ${peerSection.Endpoint}
+    allowed_ips:
+      - ${interfaceSection.Address.split(".").slice(0, 3).join(".")}.0/24
+    persistent_keep_alive: "${peerSection.PersistentKeepalive}"
+      `.trim();
+
+      document.getElementById("outputConfig").textContent = formattedConfig;
+    }
+  </script>
+</body>
+</html>

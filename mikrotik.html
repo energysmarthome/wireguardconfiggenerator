@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Converting WireGuard config with preshared key into Mikrotik CLI commands</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+</head>
+<body>
+    <h1>Converting WireGuard config with preshared key into Mikrotik CLI commands</h1>
+    
+    <textarea id="peerConf" rows="10" cols="80">[Interface]
+PrivateKey = 8RRv9f/WItM3FgX/w4FPk3cQFJlU=
+Address = 10.0.0.2/24	
+DNS = 1.1.1.1,8.8.8.8						
+
+[Peer]
+PublicKey = +ReaqN8bidykKWHtt2xpQFJVyOzmU=
+PresharedKey = /hs8u14peIDnIgv4aOT1RcpMzovb+Gaq68rP8Y=
+Endpoint = vpn.test.cloud:50001
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25</textarea>
+    <br><br>
+    
+    <label for="interfaceName">WireGuard Interface Name:</label>
+    <input type="text" id="interfaceName" value="wireguard2">
+    <br><br>
+    
+    <label for="homeNetwork">Home Network (CIDR):</label>
+    <input type="text" id="homeNetwork" value="192.168.28.0/24">
+    <br><br>
+    
+    <button onclick="generateCommands()">Generate Mikrotik CLI commands</button>
+    <button onclick="generateQRCode()">QR kód generálás</button>
+    
+    <h3>Generated Commands:</h3>
+    <pre id="output"></pre>
+
+    <h3>QR kód:</h3>
+    <div id="qrcode"></div>
+    
+    <script>
+        function generateCommands() {
+            const conf = document.getElementById("peerConf").value;
+            const interfaceName = document.getElementById("interfaceName").value;
+            const homeNetwork = document.getElementById("homeNetwork").value;
+            
+            // Parse the peer.conf data
+            const privateKey = conf.match(/PrivateKey\s*=\s*([^\s]+)/)[1];
+            const address = conf.match(/Address\s*=\s*([^\s]+)/)[1];
+            const publicKey = conf.match(/PublicKey\s*=\s*([^\s]+)/)[1];
+            const presharedKey = conf.match(/PresharedKey\s*=\s*([^\s]+)/)[1];
+            const endpoint = conf.match(/Endpoint\s*=\s*([^\s:]+)/)[1];
+            const endpointPort = conf.match(/Endpoint\s*=\s*[^\s:]+:(\d+)/)[1];
+            const allowedIPs = conf.match(/AllowedIPs\s*=\s*([^\s]+)/)[1];
+            const persistentKeepalive = conf.match(/PersistentKeepalive\s*=\s*(\d+)/)[1];
+
+            const ipWithoutSubnet = address.split('/')[0];
+            const subnet = address.split('/')[1];
+
+            // Calculate dst-address with the last octet as 0
+            const ipParts = ipWithoutSubnet.split('.');
+            ipParts[3] = '0';  // Set last octet to 0
+            const dstAddress = ipParts.join('.') + '/' + subnet;
+            
+            // Create Mikrotik commands
+            const wireguardInterfaceCommand = `/interface wireguard add name=${interfaceName} private-key="${privateKey}"`;
+            const wireguardPeerCommand = `/interface wireguard peers add interface=${interfaceName} public-key="${publicKey}" preshared-key="${presharedKey}" endpoint-address="${endpoint}" endpoint-port=${endpointPort} allowed-address="0.0.0.0/0" persistent-keepalive=${persistentKeepalive}`;
+            const ipAddressCommand = `/ip address add address=${ipWithoutSubnet} interface=${interfaceName}`;
+            const firewallRuleCommand = `/ip firewall nat add chain=srcnat src-address=${homeNetwork} out-interface=${interfaceName} action=masquerade`;
+            const staticRouteCommand = `/ip route add dst-address=${dstAddress} gateway=${interfaceName} distance=1 scope=30 target-scope=10 routing-table=main`;
+            const tuzfalSzabaly1= `/ip firewall filter add chain=forward action=accept out-interface=${interfaceName} place-before=3`;
+
+            // Output the commands
+            document.getElementById("output").textContent = 
+                wireguardInterfaceCommand + "\n" +
+                wireguardPeerCommand + "\n" +
+                ipAddressCommand + "\n" +
+                firewallRuleCommand + "\n" +
+                staticRouteCommand + "\n" +
+                tuzfalSzabaly1 + "\n\n" +
+                `After entering the commands, it is necessary to toggle the ${interfaceName} interface off and on once!!`;
+        }
+
+        function generateQRCode() {
+            const conf = document.getElementById("peerConf").value.trim();
+            
+            // Create a QR code from the peer.conf data
+            const qr = qrcode(0, 'L');
+            qr.addData(conf);
+            qr.make();
+            
+            // Output the QR code
+            document.getElementById("qrcode").innerHTML = qr.createImgTag();
+        }
+    </script>
+</body>
+</html>
